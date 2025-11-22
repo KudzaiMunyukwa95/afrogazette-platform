@@ -5,9 +5,10 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-console.log('🚀 Starting AfroGazette Minimal Server...');
+console.log('🚀 Starting AfroGazette Server with Database...');
 console.log('📊 Port:', PORT);
 console.log('📍 Environment:', process.env.NODE_ENV || 'development');
+console.log('🗄️ Database URL:', process.env.DATABASE_URL ? 'SET' : 'NOT SET');
 
 // CORS configuration
 app.use(cors({
@@ -29,32 +30,67 @@ app.use((req, res, next) => {
   next();
 });
 
+// Test database connection on startup
+const testDatabaseConnection = async () => {
+  try {
+    if (!process.env.DATABASE_URL) {
+      console.log('⚠️ No DATABASE_URL found - database features will be disabled');
+      return false;
+    }
+    
+    const { pool } = require('./config/database');
+    const result = await pool.query('SELECT NOW()');
+    console.log('✅ Database connection successful:', result.rows[0].now);
+    return true;
+  } catch (error) {
+    console.error('❌ Database connection failed:', error.message);
+    return false;
+  }
+};
+
 // Root endpoint
 app.get('/', (req, res) => {
   console.log('✅ Root endpoint hit');
   res.json({ 
-    message: 'AfroGazette Backend is running!',
+    message: 'AfroGazette Backend with Database!',
     status: 'success',
     timestamp: new Date().toISOString(),
     endpoints: [
       'GET /',
       'GET /health',
       'GET /test-cors',
-      'POST /api/auth/login'
+      'POST /api/auth/setup-admin',
+      'POST /api/auth/login',
+      'GET /api/auth/me',
+      'GET /api/users (requires auth)',
+      'POST /api/users (requires admin)'
     ]
   });
 });
 
 // Health endpoint
-app.get('/health', (req, res) => {
+app.get('/health', async (req, res) => {
   console.log('✅ Health endpoint hit');
+  
+  // Check database status
+  let dbStatus = 'not_configured';
+  try {
+    if (process.env.DATABASE_URL) {
+      const { pool } = require('./config/database');
+      await pool.query('SELECT 1');
+      dbStatus = 'connected';
+    }
+  } catch (error) {
+    dbStatus = 'error';
+  }
+  
   res.json({ 
     status: 'OK',
     message: 'Server is healthy and running',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    memory: process.memoryUsage(),
-    version: '2.0.0-minimal'
+    database: dbStatus,
+    version: '2.0.0-with-database'
   });
 });
 
@@ -69,12 +105,39 @@ app.get('/test-cors', (req, res) => {
   });
 });
 
-// Basic auth test endpoint
-app.post('/api/auth/login', (req, res) => {
-  console.log('🔐 Login endpoint hit');
+// Initialize database and routes
+const initializeApp = async () => {
+  const dbConnected = await testDatabaseConnection();
+  
+  if (dbConnected) {
+    console.log('🔌 Loading database routes...');
+    
+    try {
+      // Load auth routes
+      const authRoutes = require('./routes/auth');
+      app.use('/api/auth', authRoutes);
+      console.log('✅ Auth routes loaded');
+      
+      // Load user routes
+      const userRoutes = require('./routes/users');
+      app.use('/api/users', userRoutes);
+      console.log('✅ User routes loaded');
+      
+      console.log('🎯 Database endpoints available!');
+    } catch (error) {
+      console.error('❌ Failed to load database routes:', error.message);
+      console.log('📝 Make sure your route files exist in the correct locations');
+    }
+  } else {
+    console.log('⚠️ Running in minimal mode without database features');
+  }
+};
+
+// Basic auth test endpoint (fallback if routes don't load)
+app.post('/api/auth/test-login', (req, res) => {
+  console.log('🔐 Test login endpoint hit (fallback)');
   console.log('Body:', req.body);
   
-  // Return test response for now
   if (!req.body.email) {
     return res.status(400).json({
       error: 'Email required',
@@ -82,10 +145,9 @@ app.post('/api/auth/login', (req, res) => {
     });
   }
   
-  // Simulate auth failure for testing
   res.status(401).json({
     error: 'Invalid credentials',
-    message: 'Backend working - auth endpoint reachable'
+    message: 'Test endpoint working - database routes not loaded'
   });
 });
 
@@ -101,7 +163,9 @@ app.use('*', (req, res) => {
       'GET /',
       'GET /health', 
       'GET /test-cors',
-      'POST /api/auth/login'
+      'POST /api/auth/setup-admin',
+      'POST /api/auth/login',
+      'GET /api/auth/me'
     ]
   });
 });
@@ -116,15 +180,16 @@ app.use((error, req, res, next) => {
 });
 
 // Start server
-const server = app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', async () => {
   console.log('🟢 SERVER STARTED SUCCESSFULLY!');
   console.log(`🌍 Server running on port ${PORT}`);
-  console.log(`🔗 Access at: https://afrogazette-backend.onrender.com`);
-  console.log('📋 Available endpoints:');
-  console.log('  GET  /');
-  console.log('  GET  /health');
-  console.log('  GET  /test-cors');
-  console.log('  POST /api/auth/login');
+  console.log(`🔗 Access at: https://afrogazette-platform.onrender.com`);
+  console.log('📋 Initializing database features...');
+  
+  // Initialize database features after server starts
+  await initializeApp();
+  
+  console.log('🎉 Server ready for requests!');
 });
 
 server.on('error', (error) => {

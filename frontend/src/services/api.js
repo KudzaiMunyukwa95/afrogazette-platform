@@ -1,52 +1,131 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:10000';
+// Use the correct working backend URL
+const API_BASE_URL = 'https://afrogazette-platform.onrender.com';
 
-// Create axios instance
+console.log('🔧 Frontend API Debug:');
+console.log('VITE_API_URL:', import.meta.env.VITE_API_URL);
+console.log('API_BASE_URL:', API_BASE_URL);
+
+// Create axios instance with correct URL
 const api = axios.create({
   baseURL: API_BASE_URL.endsWith('/api') ? API_BASE_URL : `${API_BASE_URL}/api`,
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 30000,
+  withCredentials: true,
 });
 
-// Request interceptor to add auth token
+console.log('📡 Final API baseURL:', api.defaults.baseURL);
+
+// Request interceptor
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    
+    console.log(`📤 API Request: ${config.method?.toUpperCase()} ${config.url}`);
     return config;
   },
   (error) => {
+    console.error('📤 Request interceptor error:', error);
     return Promise.reject(error);
   }
 );
 
-// Response interceptor to handle errors
+// Enhanced response interceptor with better error handling
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    console.log(`📥 API Response: ${response.status} ${response.config.method?.toUpperCase()} ${response.config.url}`);
+    return response;
+  },
   (error) => {
-    if (error.response?.status === 401) {
-      // Unauthorized - clear token and redirect to login
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.href = '/login';
+    console.error('📥 API Error Details:', {
+      message: error.message,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      url: error.config?.url,
+      method: error.config?.method,
+      data: error.response?.data
+    });
+
+    // Handle different error types
+    if (error.code === 'NETWORK_ERROR') {
+      console.error('🔌 Network Error - Check backend connectivity');
     }
+    
+    if (error.message.includes('CORS')) {
+      console.error('🌐 CORS Error - Check server CORS configuration');
+    }
+
+    // Handle 401 but don't auto-redirect on login attempts
+    if (error.response?.status === 401) {
+      // Only clear token and redirect if it's not a login attempt
+      if (!error.config?.url?.includes('/auth/login')) {
+        console.log('🔐 Authentication expired - redirecting to login');
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = '/login';
+      } else {
+        console.log('🔐 Login attempt failed - keeping user on login page');
+      }
+    }
+
     return Promise.reject(error);
   }
 );
 
-// Auth API
+// Enhanced Auth API with better error handling
 export const authAPI = {
-  login: (credentials) => api.post('/auth/login', credentials),
+  login: async (credentials) => {
+    try {
+      console.log('🔐 Attempting login with backend:', API_BASE_URL);
+      const response = await api.post('/auth/login', credentials);
+      console.log('✅ Login successful');
+      return response;
+    } catch (error) {
+      console.error('❌ Login failed:', {
+        status: error.response?.status,
+        message: error.response?.data?.message || error.message,
+        data: error.response?.data
+      });
+      
+      // Don't throw the error, let the component handle it
+      throw {
+        ...error,
+        message: error.response?.data?.message || 'Login failed',
+        status: error.response?.status
+      };
+    }
+  },
   logout: () => api.post('/auth/logout'),
   me: () => api.get('/auth/me'),
   changePassword: (data) => api.post('/auth/change-password', data),
 };
 
-// Users API
+// Test connectivity on load
+const testBackendConnection = async () => {
+  try {
+    console.log('🧪 Testing backend connectivity...');
+    const response = await fetch(`${API_BASE_URL}/health`);
+    if (response.ok) {
+      const data = await response.json();
+      console.log('✅ Backend connection successful:', data);
+    } else {
+      console.error('❌ Backend health check failed:', response.status);
+    }
+  } catch (error) {
+    console.error('❌ Backend connectivity test failed:', error.message);
+  }
+};
+
+// Run connectivity test
+testBackendConnection();
+
+// Keep all other API exports the same...
 export const usersAPI = {
   getAll: () => api.get('/users'),
   getById: (id) => api.get(`/users/${id}`),
@@ -56,7 +135,6 @@ export const usersAPI = {
   getStats: () => api.get('/users/stats/overview'),
 };
 
-// Clients API
 export const clientsAPI = {
   getAll: (search = '') => api.get('/clients', { params: { search } }),
   getById: (id) => api.get(`/clients/${id}`),
@@ -67,7 +145,6 @@ export const clientsAPI = {
   getTopClients: (limit = 10) => api.get('/clients/stats/top-clients', { params: { limit } }),
 };
 
-// Sales API
 export const salesAPI = {
   getAll: (filters = {}) => api.get('/sales', { params: filters }),
   getById: (id) => api.get(`/sales/${id}`),
@@ -84,7 +161,6 @@ export const salesAPI = {
   getLeaderboard: (limit = 10) => api.get('/sales/stats/leaderboard', { params: { limit } }),
 };
 
-// Invoices API
 export const invoicesAPI = {
   getAll: () => api.get('/invoices'),
   getById: (id) => api.get(`/invoices/${id}`),
@@ -97,7 +173,6 @@ export const invoicesAPI = {
   delete: (id) => api.delete(`/invoices/${id}`),
 };
 
-// Analytics API
 export const analyticsAPI = {
   getDashboard: () => api.get('/analytics/dashboard'),
   getRevenueTrend: (params = {}) => api.get('/analytics/revenue-trend', { params }),
@@ -114,7 +189,6 @@ export const analyticsAPI = {
   },
 };
 
-// Settings API
 export const settingsAPI = {
   getAll: () => api.get('/settings'),
   getByKey: (key) => api.get(`/settings/${key}`),
@@ -124,7 +198,6 @@ export const settingsAPI = {
   resetDefaults: () => api.post('/settings/reset-defaults'),
 };
 
-// Commission Payments API
 export const commissionPaymentsAPI = {
   getAll: () => api.get('/commission-payments'),
   getById: (id) => api.get(`/commission-payments/${id}`),

@@ -5,14 +5,11 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-console.log('🚀 Starting AfroGazette Server...');
-console.log('📊 Environment Variables:');
-console.log('- NODE_ENV:', process.env.NODE_ENV || 'not set');
-console.log('- PORT:', PORT);
-console.log('- FRONTEND_URL:', process.env.FRONTEND_URL || 'not set');
-console.log('- DATABASE_URL:', process.env.DATABASE_URL ? 'SET' : 'NOT SET');
+console.log('🚀 Starting AfroGazette Minimal Server...');
+console.log('📊 Port:', PORT);
+console.log('📍 Environment:', process.env.NODE_ENV || 'development');
 
-// Simple CORS setup that definitely works
+// CORS configuration
 app.use(cors({
   origin: [
     'https://afrogazette-frontend.onrender.com',
@@ -26,63 +23,69 @@ app.use(cors({
 
 app.use(express.json());
 
-// Log all requests
+// Request logging
 app.use((req, res, next) => {
   console.log(`📡 ${new Date().toISOString()} - ${req.method} ${req.path}`);
-  console.log(`📍 Origin: ${req.headers.origin || 'none'}`);
   next();
 });
 
-// Essential test routes
+// Root endpoint
 app.get('/', (req, res) => {
+  console.log('✅ Root endpoint hit');
   res.json({ 
-    message: 'AfroGazette Backend is running!', 
+    message: 'AfroGazette Backend is running!',
+    status: 'success',
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
+    endpoints: [
+      'GET /',
+      'GET /health',
+      'GET /test-cors',
+      'POST /api/auth/login'
+    ]
   });
 });
 
+// Health endpoint
 app.get('/health', (req, res) => {
-  console.log('✅ Health check requested');
+  console.log('✅ Health endpoint hit');
   res.json({ 
-    status: 'OK', 
-    message: 'Server is healthy',
+    status: 'OK',
+    message: 'Server is healthy and running',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    cors: 'enabled'
+    memory: process.memoryUsage(),
+    version: '2.0.0-minimal'
   });
 });
 
+// CORS test endpoint
 app.get('/test-cors', (req, res) => {
-  console.log('🧪 CORS test requested from origin:', req.headers.origin);
+  console.log('🧪 CORS test endpoint hit');
   res.json({
     message: 'CORS test successful!',
     origin: req.headers.origin,
     timestamp: new Date().toISOString(),
-    cors_headers: {
-      'access-control-allow-origin': res.get('Access-Control-Allow-Origin'),
-      'access-control-allow-credentials': res.get('Access-Control-Allow-Credentials')
-    }
+    cors_working: true
   });
 });
 
-// Simple auth test endpoint
+// Basic auth test endpoint
 app.post('/api/auth/login', (req, res) => {
-  console.log('🔐 Login attempt received');
-  console.log('📧 Email:', req.body?.email || 'not provided');
+  console.log('🔐 Login endpoint hit');
+  console.log('Body:', req.body);
   
-  // For now, just return a test response
-  if (!req.body?.email) {
+  // Return test response for now
+  if (!req.body.email) {
     return res.status(400).json({
-      error: 'Email is required',
+      error: 'Email required',
       message: 'Backend is working but email missing'
     });
   }
   
-  // Return auth failure for testing
+  // Simulate auth failure for testing
   res.status(401).json({
     error: 'Invalid credentials',
-    message: 'Backend auth endpoint is working - this is expected for test'
+    message: 'Backend working - auth endpoint reachable'
   });
 });
 
@@ -90,9 +93,11 @@ app.post('/api/auth/login', (req, res) => {
 app.use('*', (req, res) => {
   console.log(`❌ Route not found: ${req.method} ${req.originalUrl}`);
   res.status(404).json({
-    error: 'Not Found',
-    message: `Route ${req.method} ${req.originalUrl} not found`,
-    availableRoutes: [
+    error: 'Route not found',
+    method: req.method,
+    url: req.originalUrl,
+    message: 'The requested endpoint does not exist',
+    available_endpoints: [
       'GET /',
       'GET /health', 
       'GET /test-cors',
@@ -103,7 +108,7 @@ app.use('*', (req, res) => {
 
 // Error handler
 app.use((error, req, res, next) => {
-  console.error('💥 Server Error:', error.message);
+  console.error('💥 Server Error:', error);
   res.status(500).json({
     error: 'Internal Server Error',
     message: error.message
@@ -114,9 +119,8 @@ app.use((error, req, res, next) => {
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log('🟢 SERVER STARTED SUCCESSFULLY!');
   console.log(`🌍 Server running on port ${PORT}`);
-  console.log(`🔗 Health check: http://localhost:${PORT}/health`);
-  console.log(`🧪 CORS test: http://localhost:${PORT}/test-cors`);
-  console.log('📋 Available routes:');
+  console.log(`🔗 Access at: https://afrogazette-backend.onrender.com`);
+  console.log('📋 Available endpoints:');
   console.log('  GET  /');
   console.log('  GET  /health');
   console.log('  GET  /test-cors');
@@ -124,16 +128,13 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 });
 
 server.on('error', (error) => {
-  console.error('🔥 Server failed to start:', error.message);
-  if (error.code === 'EADDRINUSE') {
-    console.error(`Port ${PORT} is already in use!`);
-  }
+  console.error('🔥 Server failed to start:', error);
   process.exit(1);
 });
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
-  console.log('📴 Received SIGTERM, shutting down gracefully...');
+  console.log('📴 Shutting down gracefully...');
   server.close(() => {
     console.log('✅ Server closed');
     process.exit(0);
